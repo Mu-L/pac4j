@@ -62,16 +62,12 @@ public class DefaultEntityConfigurationGenerator extends InitializableObject imp
     @Override
     public String getJwksContentType() {
         val jwksType = getEffectiveJwksType();
-        switch (jwksType) {
-            case URI:
-                return HttpConstants.APPLICATION_JSON;
-            case SIGNED_URI:
-                return SIGNED_JWKS_CONTENT_TYPE;
-            case EMBEDDED:
-                return null;
-            default:
-                throw new TechnicalException("Unsupported federation JWKS type: " + jwksType);
-        }
+        return switch (jwksType) {
+            case URI -> HttpConstants.APPLICATION_JSON;
+            case SIGNED_URI -> SIGNED_JWKS_CONTENT_TYPE;
+            case EMBEDDED -> null;
+            default -> throw new TechnicalException("Unsupported federation JWKS type: " + jwksType);
+        };
     }
 
     @Override
@@ -188,15 +184,15 @@ public class DefaultEntityConfigurationGenerator extends InitializableObject imp
         val jwksType = getEffectiveJwksType();
         Object generatedJwks = null;
         switch (jwksType) {
-            case EMBEDDED:
+            case EMBEDDED -> {
                 claimsBuilder.claim("jwks", publicJwkSet.toJSONObject());
-                break;
-            case URI:
+            }
+            case URI -> {
                 assertNotBlank("federation.exposedJwksUrl", federation.getExposedJwksUrl());
                 metadata.put("jwks_uri", federation.getExposedJwksUrl());
                 generatedJwks = publicJwkSet.toJSONObject();
-                break;
-            case SIGNED_URI:
+            }
+            case SIGNED_URI -> {
                 assertNotBlank("federation.exposedJwksUrl", federation.getExposedJwksUrl());
                 metadata.put("signed_jwks_uri", federation.getExposedJwksUrl());
                 val signedJwksClaims = new JWTClaimsSet.Builder()
@@ -205,9 +201,10 @@ public class DefaultEntityConfigurationGenerator extends InitializableObject imp
                     .expirationTime(expirationDate)
                     .build();
                 generatedJwks = buildSignedJwt(signedJwksClaims, signingKey, SIGNED_JWKS_TYPE);
-                break;
-            default:
+            }
+            default -> {
                 throw new TechnicalException("Unsupported federation JWKS type: " + jwksType);
+            }
         }
         claimsBuilder.claim("metadata", metadata);
 
