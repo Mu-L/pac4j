@@ -133,7 +133,8 @@ public final class FederationClientRegisterTests {
         configuration.getFederation().setSecretExportFile(secretFile.toString());
 
         val entityConfigurationGenerator = Mockito.mock(EntityConfigurationGenerator.class);
-        Mockito.when(entityConfigurationGenerator.getContentType()).thenReturn("application/explicit-registration-response+jwt");
+        Mockito.when(entityConfigurationGenerator.getEntityStatementContentType())
+            .thenReturn("application/explicit-registration-response+jwt");
         Mockito.when(entityConfigurationGenerator.generateEntityStatement()).thenReturn("entity-configuration");
         configuration.getFederation().setEntityConfigurationGenerator(entityConfigurationGenerator);
 
@@ -165,7 +166,8 @@ public final class FederationClientRegisterTests {
         configuration.getFederation().setEntityId("https://rp.example.org");
 
         val entityConfigurationGenerator = Mockito.mock(EntityConfigurationGenerator.class);
-        Mockito.when(entityConfigurationGenerator.getContentType()).thenReturn("application/explicit-registration-response+jwt");
+        Mockito.when(entityConfigurationGenerator.getEntityStatementContentType())
+            .thenReturn("application/explicit-registration-response+jwt");
         Mockito.when(entityConfigurationGenerator.generateEntityStatement()).thenReturn("entity-configuration");
         configuration.getFederation().setEntityConfigurationGenerator(entityConfigurationGenerator);
 
@@ -199,7 +201,8 @@ public final class FederationClientRegisterTests {
         configuration.getFederation().setSecretExportFile(secretFile.toString());
 
         val entityConfigurationGenerator = Mockito.mock(EntityConfigurationGenerator.class);
-        Mockito.when(entityConfigurationGenerator.getContentType()).thenReturn("application/explicit-registration-response+jwt");
+        Mockito.when(entityConfigurationGenerator.getEntityStatementContentType())
+            .thenReturn("application/explicit-registration-response+jwt");
         Mockito.when(entityConfigurationGenerator.generateEntityStatement()).thenReturn("entity-configuration");
         configuration.getFederation().setEntityConfigurationGenerator(entityConfigurationGenerator);
 

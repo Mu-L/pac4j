@@ -56,6 +56,16 @@ public class OidcFederationProperties {
 
     private String secretExportFile;
 
+    /** URL where JWKS (or signed JWKS) is exposed when not embedded in the entity statement.
+     * @since 6.5.2
+     */
+    private String exposedJwksUrl;
+
+    /** Strategy used to publish federation JWKS (embedded, URI, or signed URI).
+     * @since 6.5.2
+     */
+    private JwksType jwksType = JwksType.EMBEDDED;
+
     public OidcFederationProperties() {
         keystore.setCertificatePrefix("oidcfede-signing-cert");
         keystore.setCertificateExpirationPeriod(Period.ofYears(1));

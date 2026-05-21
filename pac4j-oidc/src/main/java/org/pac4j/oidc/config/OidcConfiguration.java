@@ -210,8 +210,6 @@ public class OidcConfiguration extends BaseClientConfiguration {
 
     private boolean withState = true;
 
-    private Map<String, String> mappedClaims = new LinkedHashMap<>();
-
     private ValueGenerator stateGenerator = new RandomValueGenerator();
 
     private ValueGenerator codeVerifierGenerator = new RandomValueGenerator(50);

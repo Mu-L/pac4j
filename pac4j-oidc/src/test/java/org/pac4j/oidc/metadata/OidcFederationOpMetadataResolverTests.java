@@ -113,7 +113,8 @@ public final class OidcFederationOpMetadataResolverTests {
         explicitConfiguration.getFederation().setSecretExportFile(secretFile.toString());
 
         val entityConfigurationGenerator = Mockito.mock(EntityConfigurationGenerator.class);
-        Mockito.when(entityConfigurationGenerator.getContentType()).thenReturn("application/explicit-registration-response+jwt");
+        Mockito.when(entityConfigurationGenerator.getEntityStatementContentType())
+            .thenReturn("application/explicit-registration-response+jwt");
         Mockito.when(entityConfigurationGenerator.generateEntityStatement()).thenReturn("entity-configuration");
         explicitConfiguration.getFederation().setEntityConfigurationGenerator(entityConfigurationGenerator);
 

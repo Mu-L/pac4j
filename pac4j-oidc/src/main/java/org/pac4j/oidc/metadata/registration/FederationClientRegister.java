@@ -9,7 +9,6 @@ import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.proc.BadJOSEException;
 import com.nimbusds.oauth2.sdk.http.HTTPRequest;
 import com.nimbusds.oauth2.sdk.id.Audience;
-import com.nimbusds.openid.connect.sdk.federation.entities.EntityStatement;
 import com.nimbusds.openid.connect.sdk.federation.entities.EntityStatementClaimsVerifier;
 import com.nimbusds.openid.connect.sdk.federation.registration.ClientRegistrationType;
 import com.nimbusds.openid.connect.sdk.op.OIDCProviderMetadata;
@@ -77,7 +76,7 @@ public class FederationClientRegister {
         String clientId = null;
         try {
             val request = new HTTPRequest(HTTPRequest.Method.POST, registrationEndpoint);
-            request.setContentType(EntityStatement.CONTENT_TYPE.toString());
+            request.setContentType(generator.getEntityStatementContentType());
             request.setBody(entityConfig);
             configuration.configureHttpRequest(request);
             val response = request.send();

@@ -4,15 +4,14 @@ import com.nimbusds.jose.jwk.JWK;
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.oauth2.sdk.auth.ClientAuthenticationMethod;
-import lombok.AccessLevel;
-import lombok.RequiredArgsConstructor;
-import lombok.Setter;
+import lombok.*;
 import lombok.extern.slf4j.Slf4j;
-import lombok.val;
 import org.apache.commons.lang3.StringUtils;
+import org.pac4j.core.context.HttpConstants;
 import org.pac4j.core.exception.TechnicalException;
 import org.pac4j.core.util.InitializableObject;
 import org.pac4j.oidc.client.OidcClient;
+import org.pac4j.oidc.federation.config.JwksType;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -30,27 +29,61 @@ import static org.pac4j.core.util.JwkHelper.*;
 @RequiredArgsConstructor
 public class DefaultEntityConfigurationGenerator extends InitializableObject implements EntityConfigurationGenerator {
 
-    public static final String ENTITY_STATEMENT_TYPE = "entity-statement+jwt";
+    protected static final String ENTITY_STATEMENT_TYPE = "entity-statement+jwt";
+    protected static final String SIGNED_JWKS_TYPE = "jwk-set+jwt";
+    public static final String ENTITY_STATEMENT_CONTENT_TYPE = "application/" + ENTITY_STATEMENT_TYPE;
+    public static final String SIGNED_JWKS_CONTENT_TYPE = "application/" + SIGNED_JWKS_TYPE;
 
-    public static final String CONTENT_TYPE = "application/" + ENTITY_STATEMENT_TYPE;
+    /** @deprecated use {@link #ENTITY_STATEMENT_CONTENT_TYPE} or {@link #SIGNED_JWKS_CONTENT_TYPE}. */
+    @Deprecated
+    public static final String CONTENT_TYPE = ENTITY_STATEMENT_CONTENT_TYPE;
 
     private final OidcClient client;
+    private String statement;
 
-    private String data;
+    /** Exposed JWKS value when publication mode is URI (JSON object) or SIGNED_URI (signed JWT). */
+    @Getter
+    private Object jwks;
 
     @Setter(AccessLevel.PACKAGE)
     private Date expirationDate;
 
+    @Deprecated
     @Override
     public String getContentType() {
-        return CONTENT_TYPE;
+        return getEntityStatementContentType();
+    }
+
+    @Override
+    public String getEntityStatementContentType() {
+        return ENTITY_STATEMENT_CONTENT_TYPE;
+    }
+
+    @Override
+    public String getJwksContentType() {
+        val jwksType = getEffectiveJwksType();
+        switch (jwksType) {
+            case URI:
+                return HttpConstants.APPLICATION_JSON;
+            case SIGNED_URI:
+                return SIGNED_JWKS_CONTENT_TYPE;
+            case EMBEDDED:
+                return null;
+            default:
+                throw new TechnicalException("Unsupported federation JWKS type: " + jwksType);
+        }
     }
 
     @Override
     public String generateEntityStatement() {
         init();
+        return statement;
+    }
 
-        return data;
+    @Override
+    public Object generateJwks() {
+        init();
+        return jwks;
     }
 
     @Override
@@ -78,10 +111,10 @@ public class DefaultEntityConfigurationGenerator extends InitializableObject imp
             throw new TechnicalException("OIDC JWKS or keystore mandatory to generate the entity configuration");
         }
 
-        data = buildConfig(signingKey);
+        buildConfig(signingKey);
     }
 
-    protected String buildConfig(final JWK signingKey) {
+    protected void buildConfig(final JWK signingKey) {
         if (!hasPrivatePart(signingKey)) {
             throw new TechnicalException("Signing key must include private part");
         }
@@ -151,12 +184,32 @@ public class DefaultEntityConfigurationGenerator extends InitializableObject imp
 
         val metadata = new LinkedHashMap<String, Object>();
         metadata.put("openid_relying_party", rpMetadata);
-
+        val publicJwkSet = new JWKSet(signingKey.toPublicJWK());
+        val jwksType = getEffectiveJwksType();
+        Object generatedJwks = null;
+        switch (jwksType) {
+            case EMBEDDED:
+                claimsBuilder.claim("jwks", publicJwkSet.toJSONObject());
+                break;
+            case URI:
+                assertNotBlank("federation.exposedJwksUrl", federation.getExposedJwksUrl());
+                metadata.put("jwks_uri", federation.getExposedJwksUrl());
+                generatedJwks = publicJwkSet.toJSONObject();
+                break;
+            case SIGNED_URI:
+                assertNotBlank("federation.exposedJwksUrl", federation.getExposedJwksUrl());
+                metadata.put("signed_jwks_uri", federation.getExposedJwksUrl());
+                val signedJwksClaims = new JWTClaimsSet.Builder()
+                    .claim("keys", publicJwkSet.toJSONObject().get("keys"))
+                    .issueTime(now)
+                    .expirationTime(expirationDate)
+                    .build();
+                generatedJwks = buildSignedJwt(signedJwksClaims, signingKey, SIGNED_JWKS_TYPE);
+                break;
+            default:
+                throw new TechnicalException("Unsupported federation JWKS type: " + jwksType);
+        }
         claimsBuilder.claim("metadata", metadata);
-
-        val publicKey = signingKey.toPublicJWK();
-        val jwkSet = new JWKSet(publicKey);
-        claimsBuilder.claim("jwks", jwkSet.toJSONObject());
 
         val trustAnchors = federation.getTrustAnchors();
         if (trustAnchors != null && trustAnchors.size() > 0) {
@@ -164,7 +217,15 @@ public class DefaultEntityConfigurationGenerator extends InitializableObject imp
         }
 
         val claims = claimsBuilder.build();
+        statement = buildSignedJwt(claims, signingKey, ENTITY_STATEMENT_TYPE);
+        jwks = generatedJwks;
+    }
 
-        return buildSignedJwt(claims, signingKey, ENTITY_STATEMENT_TYPE);
+    protected JwksType getEffectiveJwksType() {
+        val federation = client.getConfiguration().getFederation();
+        if (federation == null || federation.getJwksType() == null) {
+            return JwksType.EMBEDDED;
+        }
+        return federation.getJwksType();
     }
 }

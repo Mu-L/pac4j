@@ -13,12 +13,14 @@ import lombok.val;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.pac4j.core.context.HttpConstants;
 import org.pac4j.core.exception.TechnicalException;
 import org.pac4j.core.keystore.generation.FileSystemKeystoreGenerator;
 import org.pac4j.oidc.client.OidcClient;
 import org.pac4j.oidc.config.OidcConfiguration;
 import org.pac4j.oidc.config.method.IPrivateKeyJwtClientAuthnMethodConfig;
 import org.pac4j.oidc.config.method.PrivateKeyJwtClientAuthnMethodConfig;
+import org.pac4j.oidc.federation.config.JwksType;
 import org.pac4j.oidc.federation.config.OidcFederationProperties;
 import org.pac4j.oidc.federation.config.OidcTrustAnchorProperties;
 import org.pac4j.oidc.metadata.IOidcOpMetadataResolver;
@@ -76,9 +78,37 @@ public final class DefaultEntityConfigurationGeneratorTests {
     }
 
     @Test
-    public void testGetContentType() {
+    public void testGetEntityStatementContentType() {
         val generator = newGenerator();
-        assertEquals("application/entity-statement+jwt", generator.getContentType());
+        assertEquals(DefaultEntityConfigurationGenerator.ENTITY_STATEMENT_CONTENT_TYPE, generator.getEntityStatementContentType());
+    }
+
+    @Test
+    @SuppressWarnings("deprecation")
+    public void testGetContentTypeDelegatesToEntityStatementContentType() {
+        federation.setJwksType(JwksType.SIGNED_URI);
+        val generator = newGenerator();
+        assertEquals(DefaultEntityConfigurationGenerator.ENTITY_STATEMENT_CONTENT_TYPE, generator.getContentType());
+    }
+
+    @Test
+    public void testGetJwksContentTypeWithEmbeddedJwksType() {
+        val generator = newGenerator();
+        assertNull(generator.getJwksContentType());
+    }
+
+    @Test
+    public void testGetJwksContentTypeWithUriJwksType() {
+        federation.setJwksType(JwksType.URI);
+        val generator = newGenerator();
+        assertEquals(HttpConstants.APPLICATION_JSON, generator.getJwksContentType());
+    }
+
+    @Test
+    public void testGetJwksContentTypeWithSignedJwksType() {
+        federation.setJwksType(JwksType.SIGNED_URI);
+        val generator = newGenerator();
+        assertEquals(DefaultEntityConfigurationGenerator.SIGNED_JWKS_CONTENT_TYPE, generator.getJwksContentType());
     }
 
     @Test
@@ -178,6 +208,84 @@ public final class DefaultEntityConfigurationGeneratorTests {
         assertEquals("my-kid", signed.getHeader().getKeyID());
         assertJwksClaimContainsSinglePublicKey(claims.getClaim("jwks"));
         assertRedirectUrisClaim(claims.getClaim("metadata"), REDIRECT_URI);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testGenerateEntityStatementWithUriJwksTypePublishesJwksUriAndExposesJwksObject() throws Exception {
+        val jwksFile = tmp.resolve("uri-mode.jwks");
+        federation.getJwks().setJwksResource(new FileSystemResource(jwksFile.toFile()));
+        federation.setJwksType(JwksType.URI);
+        federation.setExposedJwksUrl("https://client.example.org/jwks");
+        val generator = newGenerator();
+
+        val serializedJwt = generator.generateEntityStatement();
+        val claims = SignedJWT.parse(serializedJwt).getJWTClaimsSet();
+        assertNull(claims.getClaim("jwks"));
+
+        val metadataClaim = (Map<String, Object>) claims.getClaim("metadata");
+        assertNotNull(metadataClaim);
+        assertEquals("https://client.example.org/jwks", metadataClaim.get("jwks_uri"));
+
+        val entityConfigurationGenerator = (EntityConfigurationGenerator) generator;
+        val generatedJwks = entityConfigurationGenerator.generateJwks();
+        assertNotNull(generatedJwks);
+        assertTrue(generatedJwks instanceof Map);
+        assertJwksClaimContainsSinglePublicKey(generatedJwks);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testGenerateEntityStatementWithSignedUriJwksTypePublishesSignedJwksUriAndExposesSignedJwks() throws Exception {
+        val jwksFile = tmp.resolve("signed-uri-mode.jwks");
+        federation.getJwks().setJwksResource(new FileSystemResource(jwksFile.toFile()));
+        federation.setJwksType(JwksType.SIGNED_URI);
+        federation.setExposedJwksUrl("https://client.example.org/signed-jwks");
+        val generator = newGenerator();
+
+        val serializedJwt = generator.generateEntityStatement();
+        val claims = SignedJWT.parse(serializedJwt).getJWTClaimsSet();
+        assertNull(claims.getClaim("jwks"));
+
+        val metadataClaim = (Map<String, Object>) claims.getClaim("metadata");
+        assertNotNull(metadataClaim);
+        assertEquals("https://client.example.org/signed-jwks", metadataClaim.get("signed_jwks_uri"));
+
+        val entityConfigurationGenerator = (EntityConfigurationGenerator) generator;
+        val generatedJwks = entityConfigurationGenerator.generateJwks();
+        assertNotNull(generatedJwks);
+        assertTrue(generatedJwks instanceof String);
+        val signedJwks = SignedJWT.parse((String) generatedJwks);
+        assertEquals(DefaultEntityConfigurationGenerator.SIGNED_JWKS_TYPE, signedJwks.getHeader().getType().toString());
+        val signedJwksClaimsSet = signedJwks.getJWTClaimsSet();
+        assertNotNull(claims.getIssueTime());
+        assertNotNull(claims.getExpirationTime());
+        assertEquals(claims.getIssueTime(), signedJwksClaimsSet.getIssueTime());
+        assertEquals(claims.getExpirationTime(), signedJwksClaimsSet.getExpirationTime());
+        val signedJwksKeys = (List<Map<String, Object>>) signedJwksClaimsSet.getClaim("keys");
+        assertNotNull(signedJwksKeys);
+        assertEquals(1, signedJwksKeys.size());
+        assertFalse(signedJwksKeys.get(0).containsKey("d"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testGenerateJwksWithEmbeddedJwksTypeReturnsNullAndKeepsEmbeddedJwksInStatement() throws Exception {
+        val jwksFile = tmp.resolve("embedded-mode.jwks");
+        federation.getJwks().setJwksResource(new FileSystemResource(jwksFile.toFile()));
+        val generator = newGenerator();
+
+        val serializedJwt = generator.generateEntityStatement();
+        val claims = SignedJWT.parse(serializedJwt).getJWTClaimsSet();
+        assertJwksClaimContainsSinglePublicKey(claims.getClaim("jwks"));
+
+        val metadataClaim = (Map<String, Object>) claims.getClaim("metadata");
+        assertNotNull(metadataClaim);
+        assertNull(metadataClaim.get("jwks_uri"));
+        assertNull(metadataClaim.get("signed_jwks_uri"));
+
+        val entityConfigurationGenerator = (EntityConfigurationGenerator) generator;
+        assertNull(entityConfigurationGenerator.generateJwks());
     }
 
     @Test
@@ -390,6 +498,8 @@ public final class DefaultEntityConfigurationGeneratorTests {
     @Test
     @SuppressWarnings("unchecked")
     public void testBuildConfigGeneratesSignedJwtWithExpectedClaimsAndPublicJwks() throws Exception {
+        val jwksFile = tmp.resolve("build-config.jwks");
+        federation.getJwks().setJwksResource(new FileSystemResource(jwksFile.toFile()));
         federation.setEntityId("https://entity.example.org");
         federation.setValidityInDays(7);
         federation.setApplicationType("native");
@@ -399,14 +509,15 @@ public final class DefaultEntityConfigurationGeneratorTests {
         federation.setContactName("pac4j buildConfig client");
         federation.setContactEmails(List.of("build@example.org"));
         federation.setTargetOp("https://op.example.org");
-        val generator = newGenerator();
 
         val signingKey = new RSAKeyGenerator(2048)
             .keyUse(KeyUse.SIGNATURE)
             .keyID("kid")
             .generate();
+        Files.writeString(jwksFile, new JWKSet(signingKey).toString(false));
 
-        val serializedJwt = generator.buildConfig(signingKey);
+        val generator = newGenerator();
+        val serializedJwt = generator.generateEntityStatement();
         val signed = SignedJWT.parse(serializedJwt);
         val claims = signed.getJWTClaimsSet();
 
@@ -451,20 +562,24 @@ public final class DefaultEntityConfigurationGeneratorTests {
         assertEquals("kid", keys.get(0).get("kid"));
         assertFalse(keys.get(0).containsKey("d"));
     }
+
     @Test
     public void testBuildConfigIncludesAuthorityHintsWhenTrustAnchorsConfigured() throws Exception {
+        val jwksFile = tmp.resolve("authority-hints.jwks");
+        federation.getJwks().setJwksResource(new FileSystemResource(jwksFile.toFile()));
         federation.setEntityId("https://entity.example.org");
         federation.setTrustAnchors(List.of(
             new OidcTrustAnchorProperties().setIssuer("https://ta1.example.org"),
             new OidcTrustAnchorProperties().setIssuer("https://ta2.example.org")));
-        val generator = newGenerator();
 
         val signingKey = new RSAKeyGenerator(2048)
             .keyUse(KeyUse.SIGNATURE)
             .keyID("kid")
             .generate();
+        Files.writeString(jwksFile, new JWKSet(signingKey).toString(false));
 
-        val serializedJwt = generator.buildConfig(signingKey);
+        val generator = newGenerator();
+        val serializedJwt = generator.generateEntityStatement();
         val claims = SignedJWT.parse(serializedJwt).getJWTClaimsSet();
         assertEquals(List.of("https://ta1.example.org", "https://ta2.example.org"), claims.getClaim("authority_hints"));
     }
