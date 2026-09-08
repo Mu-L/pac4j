@@ -44,6 +44,9 @@ Once a fix is released:
 - the advisory deliberately contains **no technical details**, so that users have time to upgrade;
 - the reporter is credited, unless they ask otherwise.
 
+**To be credited for the discovery of a vulnerability, you must provide a real first name and last name
+(not a GitHub handle) and/or a real company (not GitHub, unless you are employed by GitHub).**
+
 ## Staying informed
 
 - Subscribe to the [pac4j-security](https://groups.google.com/forum/?fromgroups#!forum/pac4j-security)
